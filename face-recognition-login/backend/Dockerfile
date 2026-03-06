@@ -38,9 +38,8 @@ RUN conda install -y -c conda-forge \
     python -c "import face_recognition_models; print('face_recognition_models ok')" && \
     python -c "import face_recognition; print('face_recognition ok')" && \
     python -c "import torch; print(torch.__version__, torch.cuda.is_available())" && \
-    python -c "from ultralytics import YOLO; print('ultralytics ok')" && \
-    conda clean -afy
+    python -c "from ultralytics import YOLO; print('ultralytics ok')"
 
-EXPOSE 10000
+EXPOSE 7860
 
-CMD ["sh", "-c", "uvicorn main:app --host 0.0.0.0 --port ${PORT:-10000}"]
+CMD ["sh", "-c", "uvicorn main:app --host 0.0.0.0 --port 7860"]
