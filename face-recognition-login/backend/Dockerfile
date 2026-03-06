@@ -14,6 +14,7 @@ RUN conda install -y -c conda-forge \
     cmake \
     dlib && \
     pip install --no-cache-dir \
+    "setuptools<81" \
     fastapi \
     "uvicorn[standard]" \
     python-multipart \
@@ -33,6 +34,7 @@ RUN conda install -y -c conda-forge \
     torch torchvision && \
     pip install --no-cache-dir ultralytics-thop && \
     pip install --no-cache-dir --no-deps ultralytics && \
+    python -c "import pkg_resources; print('pkg_resources ok')" && \
     python -c "import face_recognition_models; print('face_recognition_models ok')" && \
     python -c "import face_recognition; print('face_recognition ok')" && \
     python -c "import torch; print(torch.__version__, torch.cuda.is_available())" && \
