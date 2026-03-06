@@ -11,9 +11,7 @@ RUN apt-get update && apt-get install -y \
 RUN conda install -y -c conda-forge \
     python=3.11 \
     cmake \
-    dlib \
-    face_recognition \
-    face_recognition_models && \
+    dlib && \
     pip install --no-cache-dir \
     fastapi \
     "uvicorn[standard]" \
@@ -21,7 +19,10 @@ RUN conda install -y -c conda-forge \
     pillow \
     opencv-python-headless \
     numpy \
-    ultralytics && \
+    ultralytics \
+    face_recognition \
+    git+https://github.com/ageitgey/face_recognition_models && \
+    python -c "import face_recognition, face_recognition_models; print('face packages ok')" && \
     conda clean -afy
 
 EXPOSE 10000
