@@ -8,7 +8,12 @@ RUN apt-get update && apt-get install -y \
     libglib2.0-0 \
     && rm -rf /var/lib/apt/lists/*
 
-RUN conda install -y -c conda-forge python=3.11 dlib cmake && \
+RUN conda install -y -c conda-forge \
+    python=3.11 \
+    cmake \
+    dlib \
+    face_recognition \
+    face_recognition_models && \
     pip install --no-cache-dir \
     fastapi \
     "uvicorn[standard]" \
@@ -16,9 +21,7 @@ RUN conda install -y -c conda-forge python=3.11 dlib cmake && \
     pillow \
     opencv-python-headless \
     numpy \
-    ultralytics \
-    face_recognition \
-    face-recognition-models && \
+    ultralytics && \
     conda clean -afy
 
 EXPOSE 10000
