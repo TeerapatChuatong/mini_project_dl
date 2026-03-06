@@ -1,0 +1,246 @@
+import cv2
+from fastapi import FastAPI, File, UploadFile, HTTPException, Form
+from fastapi.middleware.cors import CORSMiddleware
+from PIL import Image
+import numpy as np
+import io
+import traceback
+
+# Import ส่วนประกอบเดิมของระบบ
+from liveness_detection import liveness_detector, head_pose_detector
+from face_utils import face_system
+import config
+
+# สร้าง FastAPI app
+app = FastAPI(
+    title="Face Recognition & Hat Detection API",
+    description="API สำหรับระบบ Login ด้วยใบหน้าและการตรวจสอบการสวมหมวกแบบ Real-time",
+    version="1.2.0"
+)
+
+# ตั้งค่า CORS เพื่อให้ Frontend เรียกใช้งานได้
+app.add_middleware(
+    CORSMiddleware,
+    allow_origins=["*"],
+    allow_credentials=True,
+    allow_methods=["*"],
+    allow_headers=["*"],
+)
+
+
+# ===== Helper Functions =====
+
+def read_image(file_content: bytes) -> np.ndarray:
+    """แปลงไบนารีไฟล์ภาพให้เป็น numpy array (RGB)"""
+    image = Image.open(io.BytesIO(file_content))
+    return np.array(image.convert("RGB"))
+
+
+def check_lighting(image_array: np.ndarray) -> str:
+    """ตรวจสอบความสว่างของภาพ"""
+    gray = cv2.cvtColor(image_array, cv2.COLOR_RGB2GRAY)
+    brightness = np.mean(gray)
+
+    if brightness < 60:
+        return "TOO_DARK"
+    elif brightness > 230:
+        return "TOO_BRIGHT"
+    return "NORMAL"
+
+
+# ===== API Endpoints =====
+
+@app.get("/")
+async def root():
+    return {
+        "message": "🎭 Face & Hat Recognition API",
+        "status": "online",
+        "version": "1.2.0",
+        "hat_model_loaded": face_system.is_hat_model_ready()
+    }
+
+
+@app.get("/health")
+async def health_check():
+    return {
+        "success": True,
+        "status": "ok",
+        "hat_model_loaded": face_system.is_hat_model_ready(),
+        "hat_model_error": face_system.get_hat_model_error(),
+    }
+
+
+@app.post("/identify")
+async def identify_face(file: UploadFile = File(...)):
+    """
+    Endpoint สำหรับ Login:
+    1. เช็คแสงสว่าง
+    2. ตรวจจับหมวกและดึงพิกัดกรอบจาก YOLO
+    3. ตรวจจับใบหน้า
+    4. ระบุตัวตนด้วย Face Recognition
+    """
+    try:
+        contents = await file.read()
+        image_array = read_image(contents)
+
+        # 1. เช็คแสง
+        lighting_status = check_lighting(image_array)
+
+        # 2. ตรวจจับหมวก
+        hat_detected, object_boxes = face_system.detect_objects_and_hat(image_array)
+
+        # 3. ตรวจจับใบหน้า
+        face_boxes = face_system.detect_face_with_boxes(image_array)
+
+        # 4. ระบุตัวตน
+        user_id, confidence, all_matches = face_system.identify(image_array)
+
+        # อัปเดตข้อความบนกรอบใบหน้า
+        if len(face_boxes) > 0:
+            if user_id is not None:
+                face_boxes[0]["label"] = f"{user_id.upper()} ({int(confidence)}%)"
+            else:
+                face_boxes[0]["label"] = "UNKNOWN FACE"
+
+        # รวมกรอบทั้งหมด
+        all_ui_boxes = object_boxes + face_boxes
+
+        # กรณีไม่พบใบหน้า
+        if len(face_boxes) == 0:
+            return {
+                "success": True,
+                "identified": False,
+                "message": "ไม่พบใบหน้าในกล้อง",
+                "lighting_status": lighting_status,
+                "details": {
+                    "hat_detected": hat_detected,
+                    "boxes": all_ui_boxes,
+                    "hat_model_loaded": face_system.is_hat_model_ready(),
+                    "hat_model_error": face_system.get_hat_model_error(),
+                }
+            }
+
+        # ตรวจสอบเงื่อนไขการ Login
+        is_identified = False
+        if user_id is not None and hat_detected:
+            is_identified = True
+            message = f"✅ ยืนยันตัวตนสำเร็จ: {user_id}"
+        elif user_id is not None and not hat_detected:
+            if face_system.is_hat_model_ready():
+                message = "⚠️ พบใบหน้า แต่กรุณาสวมหมวกเพื่อเข้าใช้งาน"
+            else:
+                message = "⚠️ พบใบหน้า แต่ระบบตรวจหมวกยังไม่พร้อมใช้งาน"
+        else:
+            message = "❌ ไม่พบข้อมูลผู้ใช้นี้ในระบบ"
+
+        return {
+            "success": True,
+            "identified": is_identified,
+            "user_id": user_id,
+            "confidence": confidence,
+            "all_matches": all_matches,
+            "message": message,
+            "lighting_status": lighting_status,
+            "details": {
+                "hat_detected": hat_detected,
+                "boxes": all_ui_boxes,
+                "hat_model_loaded": face_system.is_hat_model_ready(),
+                "hat_model_error": face_system.get_hat_model_error(),
+            }
+        }
+
+    except Exception as e:
+        traceback.print_exc()
+        raise HTTPException(status_code=500, detail=str(e))
+
+
+@app.post("/register")
+async def register_face(
+    user_id: str = Form(..., description="รหัสผู้ใช้"),
+    file: UploadFile = File(..., description="รูปภาพใบหน้า")
+):
+    """ลงทะเบียนใบหน้าใหม่"""
+    try:
+        contents = await file.read()
+        image_array = read_image(contents)
+
+        # เช็คจำนวนใบหน้า
+        face_boxes = face_system.detect_face_with_boxes(image_array)
+        face_count = len(face_boxes)
+
+        if face_count == 0:
+            raise HTTPException(status_code=400, detail="❌ ไม่พบใบหน้าในภาพ")
+        if face_count > 1:
+            raise HTTPException(status_code=400, detail="❌ พบใบหน้ามากกว่า 1 คน")
+
+        encoding = face_system.create_encoding(image_array)
+        if encoding is None:
+            raise HTTPException(status_code=400, detail="❌ ไม่สามารถประมวลผลใบหน้าได้")
+
+        face_system.save_encoding(user_id, encoding)
+        return {
+            "success": True,
+            "user_id": user_id,
+            "message": "✅ ลงทะเบียนสำเร็จ"
+        }
+
+    except HTTPException:
+        raise
+    except Exception as e:
+        traceback.print_exc()
+        raise HTTPException(status_code=500, detail=str(e))
+
+
+@app.post("/detect-blink")
+async def detect_blink(file: UploadFile = File(...)):
+    """ตรวจจับการกระพริบตา"""
+    try:
+        contents = await file.read()
+        nparr = np.frombuffer(contents, np.uint8)
+        image = cv2.imdecode(nparr, cv2.IMREAD_COLOR)
+
+        if image is None:
+            raise HTTPException(status_code=400, detail="อ่านภาพไม่ได้")
+
+        is_blinking, avg_ear, details = liveness_detector.detect_blink(image)
+        return {
+            "success": True,
+            "is_blinking": is_blinking,
+            "avg_ear": avg_ear,
+            "details": details
+        }
+
+    except Exception as e:
+        traceback.print_exc()
+        raise HTTPException(status_code=500, detail=str(e))
+
+
+@app.get("/users")
+async def list_users():
+    try:
+        return {
+            "success": True,
+            "users": face_system.list_users()
+        }
+    except Exception as e:
+        traceback.print_exc()
+        raise HTTPException(status_code=500, detail=str(e))
+
+
+@app.delete("/user/{user_id}")
+async def delete_user(user_id: str):
+    try:
+        success = face_system.delete_encoding(user_id)
+        if success:
+            return {"success": True, "message": "ลบข้อมูลสำเร็จ"}
+        raise HTTPException(status_code=404, detail="ไม่พบข้อมูล")
+    except HTTPException:
+        raise
+    except Exception as e:
+        traceback.print_exc()
+        raise HTTPException(status_code=500, detail=str(e))
+
+
+if __name__ == "__main__":
+    import uvicorn
+    uvicorn.run("main:app", host="0.0.0.0", port=8000, reload=True)

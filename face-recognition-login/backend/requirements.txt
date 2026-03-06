@@ -1,0 +1,8 @@
+fastapi
+uvicorn[standard]
+python-multipart
+face-recognition
+opencv-python
+Pillow
+numpy
+ultralytics
