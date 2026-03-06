@@ -18,13 +18,25 @@ RUN conda install -y -c conda-forge \
     "uvicorn[standard]" \
     python-multipart \
     pillow \
-    opencv-python-headless \
     numpy \
-    ultralytics \
+    scipy \
+    matplotlib \
+    pyyaml \
+    requests \
+    psutil \
+    polars \
+    opencv-python-headless \
     face_recognition \
     git+https://github.com/ageitgey/face_recognition_models && \
+    pip install --no-cache-dir \
+    --index-url https://download.pytorch.org/whl/cpu \
+    torch torchvision && \
+    pip install --no-cache-dir ultralytics-thop && \
+    pip install --no-cache-dir --no-deps ultralytics && \
     python -c "import face_recognition_models; print('face_recognition_models ok')" && \
     python -c "import face_recognition; print('face_recognition ok')" && \
+    python -c "import torch; print(torch.__version__, torch.cuda.is_available())" && \
+    python -c "from ultralytics import YOLO; print('ultralytics ok')" && \
     conda clean -afy
 
 EXPOSE 10000
