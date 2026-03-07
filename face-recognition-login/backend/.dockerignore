@@ -7,4 +7,3 @@ __pycache__/
 .vscode/
 node_modules/
 dist/
-face_data/encodings/
